@@ -39,4 +39,4 @@ processClient client = do
     else (putStrLn $ "Received " ++ (show (DB.length clientData)) ++ " byte(s) from " ++ clientAddress ++ ": " ++ (unpack clientData)) >>
          processClient client
   where
-    clientAddress = (show (connectionAddress client))
+    clientAddress = show (connectionAddress client)
