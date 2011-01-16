@@ -34,9 +34,8 @@ processClient :: ConnectionInformation -> IO ()
 processClient client = do
   clientData <- recv (connectionSocket client) 0x1000
   if DB.null clientData
-    then (putStrLn $ "Connection closed: " ++ clientAddress) >>
-         return ()
-    else (putStrLn $ "Received " ++ (show (DB.length clientData)) ++ " byte(s) from " ++ clientAddress ++ ": " ++ (unpack clientData)) >>
-         processClient client
+    then putStrLn $ "Connection closed: " ++ clientAddress
+    else do putStrLn $ "Received " ++ (show (DB.length clientData)) ++ " byte(s) from " ++ clientAddress ++ ": " ++ (unpack clientData)
+            processClient client
   where
     clientAddress = show (connectionAddress client)
