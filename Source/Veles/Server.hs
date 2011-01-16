@@ -1,4 +1,4 @@
-module Server(
+module Veles.Server(
   runServer
   ) where
 

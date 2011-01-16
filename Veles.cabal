@@ -1,0 +1,18 @@
+Name:                Veles
+Version:             0.1
+Synopsis:            Web development library
+Description:         SCGI web development library, intended for private use only
+License:             GPL-3
+License-file:        LICENSE
+Build-Type:          Simple
+Cabal-Version:       >=1.6
+Stability:           Experimental
+
+Library
+  hs-source-dirs:    Source
+  Build-Depends:     base >= 4 && < 5,
+                     bytestring >= 0.9 && < 0.10,
+                     mtl >= 2.0 && < 2.1,
+                     network >= 2.3 && < 2.4
+  Exposed-modules:   Veles.Server
+  ghc-options:       -Wall
