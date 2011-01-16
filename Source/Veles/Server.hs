@@ -3,6 +3,7 @@ module Server(
   ) where
 
 import Control.Concurrent
+import Control.Monad
 import qualified Data.ByteString as DB
 import Data.ByteString.Char8 (unpack)
 import Network.Socket hiding (recv)
@@ -27,7 +28,7 @@ acceptClient serverSocket = do
   putStrLn "Waiting for a new connection"
   (clientSocket, clientAddress) <- accept serverSocket
   putStrLn $ "New connection: " ++ (show clientAddress)
-  forkIO $ processClient $ ConnectionInformation clientSocket clientAddress
+  void $ forkIO $ processClient $ ConnectionInformation clientSocket clientAddress
   return ()
 
 processClient :: ConnectionInformation -> IO ()
@@ -35,7 +36,7 @@ processClient client = do
   clientData <- recv (connectionSocket client) 0x1000
   if DB.null clientData
     then putStrLn $ "Connection closed: " ++ clientAddress
-    else do putStrLn $ "Received " ++ (show (DB.length clientData)) ++ " byte(s) from " ++ clientAddress ++ ": " ++ (unpack clientData)
+    else do putStrLn $ "Received " ++ (show (DB.length clientData)) ++ " byte(s) from " ++ clientAddress ++ ":  "  ++ (show $ unpack clientData)
             processClient client
   where
     clientAddress = show (connectionAddress client)
