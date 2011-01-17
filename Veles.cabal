@@ -13,6 +13,7 @@ Library
   Build-Depends:     base >= 4 && < 5,
                      bytestring >= 0.9 && < 0.10,
                      mtl >= 2.0 && < 2.1,
-                     network >= 2.3 && < 2.4
+                     network >= 2.3 && < 2.4,
+                     Knyaz >= 0.1
   Exposed-modules:   Veles.Server
   ghc-options:       -Wall
