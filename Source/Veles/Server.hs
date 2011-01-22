@@ -9,6 +9,7 @@ import qualified Data.ByteString.Char8 as DBC
 import Network.Socket hiding (recv)
 import Network.Socket.ByteString (recv)
 
+import Knyaz.ByteString
 import Knyaz.Console
 import Knyaz.String
 
@@ -41,7 +42,8 @@ acceptClient printLine serverSocket = do
   return ()
 
 -- | This function specifies the size to be used for each recv call.
-receiveSize = 0x1000 :: Int
+receiveSize :: Int
+receiveSize = 0x1000
 
 type SCGIRequestLength = Int
 
@@ -50,39 +52,39 @@ processClient :: PrintFunction -> ConnectionInformation -> DB.ByteString -> Mayb
 processClient printLine client buffer requestLength = do
   let clientSocket = connectionSocket client
   clientData <- recv clientSocket receiveSize
-  let newBuffer = buffer ++ clientData
+  let newBuffer = DB.append buffer clientData
       currentLength = DB.length newBuffer
 
       determineAction expectedLength =
-        if currentLength >= expectedLength then
+        if currentLength >= expectedLength
+        then
           -- the expected number of bytes has been read, parse the fields in the buffer
           processRequest printLine client newBuffer
         else
           -- still need to read more data - the buffer isn't filled yet
           readMore $ Just expectedLength
 
-      readMore length =
-        processClient printLine client newBuffer length
+      readMore expectedLength =
+        processClient printLine client newBuffer expectedLength
 
-  if DB.null clientData then
-    printLine $ "Connection closed: " ++ clientAddress
-  else
-    do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ":  "  ++ (show $ DBC.unpack clientData)
-       case requestLength of
-         Just length ->
-           -- the length of the request is already known and does not need to be calculated again
-           determineAction length
-         _ ->
-           -- the length of the request is unknown at this point and is yet to be determined
-           let lengthResult = determineRequestLength newBuffer in
-             case lengthResult of
-               RegularLengthResult maybeLength ->
-                 case maybeLength of
-                   Just length -> determineAction length
-                   Nothing -> readMore Nothing
-               LengthStringConversionError ->
-                 -- the client has specified an invalid length string, terminate the conection
-                 sClose clientSocket
+  if DB.null clientData
+    then printLine $ "Connection closed: " ++ clientAddress
+    else do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ": "  ++ (show $ DBC.unpack clientData)
+            case requestLength of
+              Just expectedLength ->
+                -- the length of the request is already known and does not need to be calculated again
+                determineAction expectedLength
+              _ ->
+                -- the length of the request is unknown at this point and is yet to be determined
+                let lengthResult = determineRequestLength newBuffer in
+                case lengthResult of
+                  RegularLengthResult maybeLength ->
+                    case maybeLength of
+                      Just expectedLength -> determineAction expectedLength
+                      Nothing -> readMore Nothing
+                  LengthStringConversionError ->
+                    -- the client has specified an invalid length string, terminate the conection
+                    sClose clientSocket
   where
     clientAddress = show $ connectionAddress client
 
@@ -93,10 +95,10 @@ data RequestLengthResult =
 -- | Try to read the /^\d+:/ part of an SCGI request to its total length.
 determineRequestLength :: DB.ByteString -> RequestLengthResult
 determineRequestLength buffer =
-  case DB.findSubstring (DBC.pack ":") buffer of
+  case findSubByteString buffer $ DBC.pack ":" of
     Just offset ->
-      let lengthString = take offset buffer
-          lengthMaybe = readMaybe lengthString :: Maybe Int
+      let lengthString = DB.take offset buffer
+          lengthMaybe = readMaybe (DBC.unpack lengthString) :: Maybe Int
           in
        case lengthMaybe of
          Just _ ->
