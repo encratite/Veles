@@ -5,18 +5,20 @@ module Veles.Server(
 import Control.Concurrent
 import Control.Monad
 import qualified Data.ByteString as DB
-import Data.ByteString.Char8 (unpack)
+import qualified Data.ByteString.Char8 as DBC
 import Network.Socket hiding (recv)
 import Network.Socket.ByteString (recv)
 
 import Knyaz.Console
+import Knyaz.String
 
 data ConnectionInformation = ConnectionInformation {
   connectionSocket :: Socket,
   connectionAddress :: SockAddr
   }
 
--- run the SCGI server on the specified port, does not terminate
+-- | Run the SCGI server on the specified port.
+-- Does not terminate.
 runServer :: Int -> IO ()
 runServer port =  withSocketsDo . withLockedLinePrinting $ \printLine -> createServer printLine port
 
@@ -29,22 +31,84 @@ createServer printLine port = do
   printLine $ "Listening on port " ++ (show port)
   forever $ acceptClient printLine serverSocket
 
--- accept a new client from a server socket and create a new thread to process it
+-- | Accept a new client from a server socket and create a new thread to process it.
 acceptClient :: PrintFunction -> Socket -> IO ()
 acceptClient printLine serverSocket = do
   printLine "Waiting for a new connection"
   (clientSocket, clientAddress) <- accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
-  void . forkIO . processClient printLine $ ConnectionInformation clientSocket clientAddress
+  void . forkIO $ processClient printLine (ConnectionInformation clientSocket clientAddress) DBC.empty Nothing
   return ()
 
--- handles the communication with a client in its own thread created by acceptClient
-processClient :: PrintFunction -> ConnectionInformation -> IO ()
-processClient printLine client = do
-  clientData <- recv (connectionSocket client) 0x1000
-  if DB.null clientData
-    then printLine $ "Connection closed: " ++ clientAddress
-    else do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ":  "  ++ (show $ unpack clientData)
-            processClient printLine client
+-- | This function specifies the size to be used for each recv call.
+receiveSize = 0x1000 :: Int
+
+type SCGIRequestLength = Int
+
+-- | Handles the communication with a client in its own thread created by acceptClient.
+processClient :: PrintFunction -> ConnectionInformation -> DB.ByteString -> Maybe SCGIRequestLength -> IO ()
+processClient printLine client buffer requestLength = do
+  let clientSocket = connectionSocket client
+  clientData <- recv clientSocket receiveSize
+  let newBuffer = buffer ++ clientData
+      currentLength = DB.length newBuffer
+
+      determineAction expectedLength =
+        if currentLength >= expectedLength then
+          -- the expected number of bytes has been read, parse the fields in the buffer
+          processRequest printLine client newBuffer
+        else
+          -- still need to read more data - the buffer isn't filled yet
+          readMore $ Just expectedLength
+
+      readMore length =
+        processClient printLine client newBuffer length
+
+  if DB.null clientData then
+    printLine $ "Connection closed: " ++ clientAddress
+  else
+    do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ":  "  ++ (show $ DBC.unpack clientData)
+       case requestLength of
+         Just length ->
+           -- the length of the request is already known and does not need to be calculated again
+           determineAction length
+         _ ->
+           -- the length of the request is unknown at this point and is yet to be determined
+           let lengthResult = determineRequestLength newBuffer in
+             case lengthResult of
+               RegularLengthResult maybeLength ->
+                 case maybeLength of
+                   Just length -> determineAction length
+                   Nothing -> readMore Nothing
+               LengthStringConversionError ->
+                 -- the client has specified an invalid length string, terminate the conection
+                 sClose clientSocket
   where
     clientAddress = show $ connectionAddress client
+
+data RequestLengthResult =
+  RegularLengthResult (Maybe Int) |
+  LengthStringConversionError
+
+-- | Try to read the /^\d+:/ part of an SCGI request to its total length.
+determineRequestLength :: DB.ByteString -> RequestLengthResult
+determineRequestLength buffer =
+  case DB.findSubstring (DBC.pack ":") buffer of
+    Just offset ->
+      let lengthString = take offset buffer
+          lengthMaybe = readMaybe lengthString :: Maybe Int
+          in
+       case lengthMaybe of
+         Just _ ->
+           -- successfully determined the length of the request
+           RegularLengthResult lengthMaybe
+         _ ->
+           -- the client specified an invalid length string
+           LengthStringConversionError
+    _ ->
+      -- unable to determine the end of the length string (i.e. no colon was found)
+      RegularLengthResult Nothing
+
+-- not implemented yet
+processRequest :: PrintFunction -> ConnectionInformation -> DB.ByteString -> IO ()
+processRequest printLine client buffer = return ()
