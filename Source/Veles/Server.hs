@@ -41,6 +41,9 @@ acceptClient printLine serverSocket = do
   void . forkIO $ processClient printLine (ConnectionInformation clientSocket clientAddress) DBC.empty Nothing
   return ()
 
+showByteString :: DB.ByteString -> String
+showByteString string = show $ DBC.unpack string
+
 -- | This function specifies the size to be used for each recv call.
 receiveSize :: Int
 receiveSize = 0x1000
@@ -57,9 +60,12 @@ processClient printLine client buffer requestLength = do
 
       determineAction expectedLength =
         if currentLength >= expectedLength
-        then
-          -- the expected number of bytes has been read, parse the fields in the buffer
-          processRequest printLine client newBuffer
+        then do
+          -- the expected number of bytes has been read, process the fields in the corresponding subset of the buffer
+          let requestBuffer = DBC.take expectedLength newBuffer
+              remainingBuffer = DBC.drop expectedLength newBuffer
+          processRequest printLine client requestBuffer
+          processClient printLine client remainingBuffer Nothing
         else
           -- still need to read more data - the buffer isn't filled yet
           readMore $ Just expectedLength
@@ -69,7 +75,7 @@ processClient printLine client buffer requestLength = do
 
   if DB.null clientData
     then printLine $ "Connection closed: " ++ clientAddress
-    else do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ": "  ++ (show $ DBC.unpack clientData)
+    else do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ": "  ++ showByteString clientData
             case requestLength of
               Just expectedLength ->
                 -- the length of the request is already known and does not need to be calculated again
@@ -101,9 +107,10 @@ determineRequestLength buffer =
           lengthMaybe = readMaybe (DBC.unpack lengthString) :: Maybe Int
           in
        case lengthMaybe of
-         Just _ ->
+         Just requestLength ->
            -- successfully determined the length of the request
-           RegularLengthResult lengthMaybe
+           -- this length does not include the length string and the colon itself, though, so that has to be added
+           RegularLengthResult . Just $ offset + 2 + requestLength
          _ ->
            -- the client specified an invalid length string
            LengthStringConversionError
@@ -113,4 +120,5 @@ determineRequestLength buffer =
 
 -- not implemented yet
 processRequest :: PrintFunction -> ConnectionInformation -> DB.ByteString -> IO ()
-processRequest printLine client buffer = return ()
+processRequest printLine client request = do
+  printLine $ "Processing request: " ++ showByteString request
