@@ -4,6 +4,7 @@ module Veles.Server(
 
 import Control.Concurrent
 import Control.Monad
+import Control.Monad.Reader
 import qualified Data.ByteString as DB
 import qualified Data.ByteString.Char8 as DBC
 import Network.Socket hiding (recv)
@@ -21,25 +22,26 @@ data ConnectionInformation = ConnectionInformation {
 -- | Run the SCGI server on the specified port.
 -- Does not terminate.
 runServer :: Int -> IO ()
-runServer port =  withSocketsDo . withLockedLinePrinting $ \printLine -> createServer printLine port
+runServer port =  withSocketsDo . withLockedConsole $ createServer port
 
-createServer :: PrintFunction -> Int -> IO ()
-createServer printLine port = do
-  serverSocket <- socket AF_INET Stream defaultProtocol
-  serverAddress <- inet_addr "127.0.0.1"
-  bindSocket serverSocket $ SockAddrInet (fromIntegral port) serverAddress
-  listen serverSocket 1
+createServer :: Int -> LockedConsole IO ()
+createServer port = do
+  serverSocket <- liftIO $ socket AF_INET Stream defaultProtocol
+  serverAddress <- liftIO $ inet_addr "127.0.0.1"
+  liftIO $ bindSocket serverSocket $ SockAddrInet (fromIntegral port) serverAddress
+  liftIO $ listen serverSocket 1
   printLine $ "Listening on port " ++ (show port)
-  forever $ acceptClient printLine serverSocket
+  forever $ acceptClient serverSocket
 
 -- | Accept a new client from a server socket and create a new thread to process it.
-acceptClient :: PrintFunction -> Socket -> IO ()
-acceptClient printLine serverSocket = do
+acceptClient :: Socket -> LockedConsole IO ()
+acceptClient serverSocket = do
   printLine "Waiting for a new connection"
-  (clientSocket, clientAddress) <- accept serverSocket
+  (clientSocket, clientAddress) <- liftIO $ accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
-  void . forkIO $ processClient printLine (ConnectionInformation clientSocket clientAddress) DBC.empty Nothing
-  return ()
+  let connectionInformation = ConnectionInformation clientSocket clientAddress
+  state <- ask
+  void . liftIO . forkIO $ runReaderT (processClient connectionInformation DBC.empty Nothing) state
 
 showByteString :: DB.ByteString -> String
 showByteString string = show $ DBC.unpack string
@@ -51,10 +53,10 @@ receiveSize = 0x1000
 type SCGIRequestLength = Int
 
 -- | Handles the communication with a client in its own thread created by acceptClient.
-processClient :: PrintFunction -> ConnectionInformation -> DB.ByteString -> Maybe SCGIRequestLength -> IO ()
-processClient printLine client buffer requestLength = do
+processClient :: ConnectionInformation -> DB.ByteString -> Maybe SCGIRequestLength -> LockedConsole IO ()
+processClient client buffer requestLength = do
   let clientSocket = connectionSocket client
-  clientData <- recv clientSocket receiveSize
+  clientData <- liftIO $ recv clientSocket receiveSize
   let newBuffer = DB.append buffer clientData
       currentLength = DB.length newBuffer
 
@@ -62,16 +64,17 @@ processClient printLine client buffer requestLength = do
         if currentLength >= expectedLength
         then do
           -- the expected number of bytes has been read, process the fields in the corresponding subset of the buffer
-          let requestBuffer = DBC.take expectedLength newBuffer
-              remainingBuffer = DBC.drop expectedLength newBuffer
-          processRequest printLine client requestBuffer
-          processClient printLine client remainingBuffer Nothing
+          let bufferOperation f = f expectedLength newBuffer
+              requestBuffer = bufferOperation DBC.take
+              remainingBuffer = bufferOperation DBC.drop
+          processRequest client requestBuffer
+          processClient client remainingBuffer Nothing
         else
           -- still need to read more data - the buffer isn't filled yet
           readMore $ Just expectedLength
 
       readMore expectedLength =
-        processClient printLine client newBuffer expectedLength
+        processClient client newBuffer expectedLength
 
   if DB.null clientData
     then printLine $ "Connection closed: " ++ clientAddress
@@ -90,7 +93,7 @@ processClient printLine client buffer requestLength = do
                       Nothing -> readMore Nothing
                   LengthStringConversionError ->
                     -- the client has specified an invalid length string, terminate the conection
-                    sClose clientSocket
+                    liftIO $ sClose clientSocket
   where
     clientAddress = show $ connectionAddress client
 
@@ -119,6 +122,6 @@ determineRequestLength buffer =
       RegularLengthResult Nothing
 
 -- not implemented yet
-processRequest :: PrintFunction -> ConnectionInformation -> DB.ByteString -> IO ()
-processRequest printLine client request = do
+processRequest :: ConnectionInformation -> DB.ByteString -> LockedConsole IO ()
+processRequest client request = do
   printLine $ "Processing request: " ++ showByteString request
