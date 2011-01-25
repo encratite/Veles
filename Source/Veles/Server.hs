@@ -61,11 +61,11 @@ processClient client buffer requestLength = do
   let newBuffer = DB.append buffer clientData
       currentLength = DB.length newBuffer
 
-      determineAction expectedLength =
+      determineAction expectedLength actionBuffer =
         if currentLength >= expectedLength
         then do
           -- the expected number of bytes has been read, process the fields in the corresponding subset of the buffer
-          let bufferOperation f = f expectedLength newBuffer
+          let bufferOperation f = f expectedLength actionBuffer
               requestBuffer = bufferOperation DBC.take
               remainingBuffer = bufferOperation DBC.drop
           processRequest client requestBuffer
@@ -83,14 +83,14 @@ processClient client buffer requestLength = do
             case requestLength of
               Just expectedLength ->
                 -- the length of the request is already known and does not need to be calculated again
-                determineAction expectedLength
+                determineAction expectedLength newBuffer
               _ ->
                 -- the length of the request is unknown at this point and is yet to be determined
                 let lengthResult = determineRequestLength newBuffer in
                 case lengthResult of
                   RegularLengthResult maybeLength ->
                     case maybeLength of
-                      Just expectedLength -> determineAction expectedLength
+                      Just (expectedLength, remainingBuffer) -> determineAction expectedLength remainingBuffer
                       Nothing -> readMore Nothing
                   LengthStringConversionError ->
                     -- the client has specified an invalid length string, terminate the conection
@@ -99,7 +99,8 @@ processClient client buffer requestLength = do
     clientAddress = show $ connectionAddress client
 
 data RequestLengthResult =
-  RegularLengthResult (Maybe Int) |
+  -- the tuple means (length of the SCGI request (without the length string/colon that is), remaining buffer without the length string)
+  RegularLengthResult (Maybe (Int, DB.ByteString)) |
   LengthStringConversionError
 
 -- | Try to read the /^\d+:/ part of an SCGI request to its total length.
@@ -107,14 +108,15 @@ determineRequestLength :: DB.ByteString -> RequestLengthResult
 determineRequestLength buffer =
   case findSubByteString buffer $ DBC.pack ":" of
     Just offset ->
-      let lengthString = DB.take offset buffer
-          lengthMaybe = readMaybe (DBC.unpack lengthString) :: Maybe Int
+      let lengthString = DBC.unpack $ DB.take offset buffer
+          remainingBuffer = DB.drop offset buffer
+          lengthMaybe = readMaybe lengthString :: Maybe Int
           in
        case lengthMaybe of
          Just requestLength ->
            -- successfully determined the length of the request
-           -- this length does not include the length string and the colon itself, though, so that has to be added
-           RegularLengthResult . Just $ offset + 2 + requestLength
+           -- this length does not include the length string and the colon itself, though, so the buffer should be adjusted accordingly
+           RegularLengthResult $ Just (requestLength, remainingBuffer)
          _ ->
            -- the client specified an invalid length string
            LengthStringConversionError
