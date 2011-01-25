@@ -65,11 +65,8 @@ processClient client buffer requestLength = do
         if currentLength >= expectedLength
         then do
           -- the expected number of bytes has been read, process the fields in the corresponding subset of the buffer
-          let bufferOperation f = f expectedLength actionBuffer
-              requestBuffer = bufferOperation DBC.take
-              remainingBuffer = bufferOperation DBC.drop
+          let requestBuffer = DBC.take expectedLength actionBuffer
           processRequest client requestBuffer
-          processClient client remainingBuffer Nothing
         else
           -- still need to read more data - the buffer isn't filled yet
           readMore $ Just expectedLength
@@ -127,4 +124,6 @@ determineRequestLength buffer =
 -- not implemented yet
 processRequest :: ConnectionInformation -> DB.ByteString -> LockedConsole IO ()
 processRequest client request = do
+  let clientSocket = connectionSocket client
   printLine $ "Processing request: " ++ showByteString request
+  liftIO $ sClose clientSocket
