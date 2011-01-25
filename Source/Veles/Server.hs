@@ -28,8 +28,9 @@ createServer :: Int -> LockedConsole IO ()
 createServer port = do
   serverSocket <- liftIO $ socket AF_INET Stream defaultProtocol
   serverAddress <- liftIO $ inet_addr "127.0.0.1"
-  liftIO $ bindSocket serverSocket $ SockAddrInet (fromIntegral port) serverAddress
-  liftIO $ listen serverSocket 1
+  liftIO $ do
+    bindSocket serverSocket $ SockAddrInet (fromIntegral port) serverAddress
+    listen serverSocket 1
   printLine $ "Listening on port " ++ (show port)
   forever $ acceptClient serverSocket
 
