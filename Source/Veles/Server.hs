@@ -1,4 +1,5 @@
 module Veles.Server(
+  ConnectionInformation(..),
   runServer
   ) where
 
@@ -11,13 +12,11 @@ import Network.Socket hiding (recv)
 import Network.Socket.ByteString (recv)
 
 import Knyaz.Console
+import Knyaz.Reader
 
+import Veles.ConnectionInformation
+import Veles.Client
 import Veles.SCGI
-
-data ConnectionInformation = ConnectionInformation {
-  connectionSocket :: Socket,
-  connectionAddress :: SockAddr
-  }
 
 -- | Run the SCGI server on the specified port.
 -- Does not terminate.
@@ -41,8 +40,7 @@ acceptClient serverSocket = do
   (clientSocket, clientAddress) <- liftIO $ accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
   let connectionInformation = ConnectionInformation clientSocket clientAddress
-  state <- ask
-  void . liftIO . forkIO $ runReaderT (processClient connectionInformation DBC.empty Nothing) state
+  forkReader . withClientEnvironment $ readClientData headerLengthReader
 
 showByteString :: DB.ByteString -> String
 showByteString string = show $ DBC.unpack string
@@ -51,52 +49,39 @@ showByteString string = show $ DBC.unpack string
 receiveSize :: Int
 receiveSize = 0x1000
 
-type SCGIRequestLength = Int
+type ClientFlow = ClientEnvironment IO ()
 
--- | Handles the communication with a client in its own thread created by acceptClient.
-processClient :: ConnectionInformation -> DB.ByteString -> Maybe SCGIRequestLength -> LockedConsole IO ()
-processClient client buffer requestLength = do
+readClientData :: ClientFlow -> ClientFlow
+readClientData handler = do
   let clientSocket = connectionSocket client
   clientData <- liftIO $ recv clientSocket receiveSize
   let newBuffer = DB.append buffer clientData
       currentLength = DB.length newBuffer
-
-      determineAction expectedLength actionBuffer =
-        if currentLength >= expectedLength
-        then do
-          -- the expected number of bytes has been read, process the fields in the corresponding subset of the buffer
-          let requestBuffer = DBC.take expectedLength actionBuffer
-          processRequest client requestBuffer
-        else
-          -- still need to read more data - the buffer isn't filled yet
-          readMore $ Just expectedLength
-
-      readMore expectedLength =
-        processClient client newBuffer expectedLength
-
   if DB.null clientData
-    then printLine $ "Connection closed: " ++ clientAddress
-    else do printLine $ "Received " ++ (show $ DB.length clientData) ++ " byte(s) from " ++ clientAddress ++ ": "  ++ showByteString clientData
-            case requestLength of
-              Just expectedLength ->
-                -- the length of the request is already known and does not need to be calculated again
-                determineAction expectedLength newBuffer
-              _ ->
-                -- the length of the request is unknown at this point and is yet to be determined
-                let lengthResult = determineRequestLength newBuffer in
-                case lengthResult of
-                  RegularLengthResult maybeLength ->
-                    case maybeLength of
-                      Just (expectedLength, remainingBuffer) -> determineAction expectedLength remainingBuffer
-                      Nothing -> readMore Nothing
-                  LengthStringConversionError ->
-                    -- the client has specified an invalid length string, terminate the conection
-                    liftIO $ sClose clientSocket
+    then do putStrLn $ "Connection closed: " ++ clientAddress
+    else do putStrLn $ "Received data from " ++ clientAddress ++ ": " ++ showByteString clientData
+            handler newBuffer
   where
     clientAddress = show $ connectionAddress client
 
+headerLengthReader :: ClientFlow
+headerLengthReader =
+  case determineRequestLength getBuffer of
+    RegularLengthResult maybeLength ->
+      case maybeLength of
+        Just (expectedLength, remainingBuffer) ->
+          headerReader
+        Nothing ->
+          readClientData headerLengthReader
+    LengthStringConversionError ->
+      liftIO $ sClose getSocket
+
+
+headerReader :: ClientFlow
+headerReader = undefined
+
 -- not implemented yet
-processRequest :: ConnectionInformation -> DB.ByteString -> LockedConsole IO ()
+processRequest :: ConnectionInformation -> DB.ByteString -> ClientFlow
 processRequest client request = do
   let clientSocket = connectionSocket client
   printLine $ "Processing request: " ++ showByteString request

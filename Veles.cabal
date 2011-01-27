@@ -16,4 +16,5 @@ Library
                      network >= 2.3 && < 2.4,
                      Knyaz >= 0.1
   Exposed-modules:   Veles.Server
+  Other-modules:     Veles.SCGI
   ghc-options:       -Wall
