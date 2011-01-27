@@ -23,7 +23,7 @@ import Veles.SCGI
 runServer :: Int -> IO ()
 runServer port =  withSocketsDo . withLockedConsole $ createServer port
 
-createServer :: Int -> LockedConsole IO ()
+createServer :: Int -> LockedConsoleT IO ()
 createServer port = do
   serverSocket <- liftIO $ socket AF_INET Stream defaultProtocol
   serverAddress <- liftIO $ inet_addr "127.0.0.1"
@@ -34,7 +34,7 @@ createServer port = do
   forever $ acceptClient serverSocket
 
 -- | Accept a new client from a server socket and create a new thread to process it.
-acceptClient :: Socket -> LockedConsole IO ()
+acceptClient :: Socket -> LockedConsoleT IO ()
 acceptClient serverSocket = do
   printLine "Waiting for a new connection"
   (clientSocket, clientAddress) <- liftIO $ accept serverSocket
@@ -49,12 +49,11 @@ showByteString string = show $ DBC.unpack string
 receiveSize :: Int
 receiveSize = 0x1000
 
-type ClientFlow = ClientEnvironment IO ()
+type ClientFlow = ClientEnvironmentT IO ()
 
 readClientData :: ClientFlow -> ClientFlow
 readClientData handler = do
-  let clientSocket = connectionSocket client
-  clientData <- liftIO $ recv clientSocket receiveSize
+  clientData <- liftIO $ recv getSocket receiveSize
   let newBuffer = DB.append buffer clientData
       currentLength = DB.length newBuffer
   if DB.null clientData
