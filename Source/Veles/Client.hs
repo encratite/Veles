@@ -9,6 +9,7 @@ module Veles.Client(
 import Control.Monad.State hiding (state)
 import qualified Data.ByteString as DB
 import qualified Data.ByteString.Char8 as DBC
+import Data.Functor
 import Network.Socket hiding (recv)
 
 import Knyaz.Console
@@ -23,23 +24,19 @@ data ClientEnvironmentData = ClientEnvironmentData {
 type ClientEnvironmentT m = StateT ClientEnvironmentData (LockedConsoleT m)
 
 withClientEnvironment :: (MonadIO m, Functor m) => ConnectionInformation -> ClientEnvironmentT m a -> LockedConsoleT m ()
-withClientEnvironment client state = do
-  let environment = ClientEnvironmentData client DBC.empty
-  runStateT state environment
-  return ()
+withClientEnvironment client state =
+  void $ runStateT state $ ClientEnvironmentData client DBC.empty
 
-getSocket :: Monad m => ClientEnvironmentT m Socket
-getSocket = do
-  connection <- gets clientConnection
-  return $ connectionSocket connection
+getSocket :: (Monad m, Functor m) => ClientEnvironmentT m Socket
+getSocket = connectionSocket <$> gets clientConnection
 
 getBuffer :: Monad m => ClientEnvironmentT m DB.ByteString
 getBuffer = gets clientBuffer
 
 setBuffer :: Monad m => DB.ByteString -> ClientEnvironmentT m ()
-setBuffer newBuffer = do
-  connection <- gets clientConnection
-  put $ ClientEnvironmentData connection newBuffer
+setBuffer newBuffer = modify modifier
+  where
+    modifier state = ClientEnvironmentData (clientConnection state) newBuffer
 
 clientPrint :: MonadIO m => String -> ClientEnvironmentT m ()
 clientPrint string = do
