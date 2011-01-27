@@ -53,15 +53,12 @@ type ClientFlow = ClientEnvironmentT IO ()
 
 readClientData :: ClientFlow -> ClientFlow
 readClientData handler = do
-  clientData <- liftIO $ recv getSocket receiveSize
-  let newBuffer = DB.append buffer clientData
-      currentLength = DB.length newBuffer
-  if DB.null clientData
-    then do putStrLn $ "Connection closed: " ++ clientAddress
-    else do putStrLn $ "Received data from " ++ clientAddress ++ ": " ++ showByteString clientData
-            handler newBuffer
-  where
-    clientAddress = show $ connectionAddress client
+  newData <- liftIO $ recv getSocket receiveSize
+  if DB.null newData
+    then clientPrint "Connection closed"
+    else do clientPrint $ "Received data : " ++ showByteString newData
+            appendBuffer newData
+            handler
 
 headerLengthReader :: ClientFlow
 headerLengthReader =
