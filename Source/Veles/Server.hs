@@ -6,6 +6,7 @@ module Veles.Server(
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.State -- temporary
 import qualified Data.ByteString as DB
 import qualified Data.ByteString.Char8 as DBC
 import Network.Socket hiding (recv)
@@ -40,7 +41,12 @@ acceptClient serverSocket = do
   (clientSocket, clientAddress) <- liftIO $ accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
   let connectionInformation = ConnectionInformation clientSocket clientAddress
-  forkReader . withClientEnvironment $ readClientData headerLengthReader
+  -- forkReader . withClientEnvironment $ readClientData headerLengthReader
+  consoleState <- ask
+  let client = ClientEnvironmentData connectionInformation DBC.empty
+      innerRunner = runStateT (readClientData headerLengthReader) client
+      outerRunner = runReaderT innerRunner consoleState
+  lift . void . forkIO . void $ outerRunner
 
 showByteString :: DB.ByteString -> String
 showByteString string = show $ DBC.unpack string
@@ -53,7 +59,8 @@ type ClientFlow = ClientEnvironmentT IO ()
 
 readClientData :: ClientFlow -> ClientFlow
 readClientData handler = do
-  newData <- liftIO $ recv getSocket receiveSize
+  socket <- getSocket
+  newData <- liftIO $ recv socket receiveSize
   if DB.null newData
     then clientPrint "Connection closed"
     else do clientPrint $ "Received data : " ++ showByteString newData
@@ -61,24 +68,27 @@ readClientData handler = do
             handler
 
 headerLengthReader :: ClientFlow
-headerLengthReader =
-  case determineRequestLength getBuffer of
+headerLengthReader = do
+  buffer <- getBuffer
+  case determineRequestLength buffer of
     RegularLengthResult maybeLength ->
       case maybeLength of
         Just (expectedLength, remainingBuffer) ->
           headerReader
         Nothing ->
           readClientData headerLengthReader
-    LengthStringConversionError ->
-      liftIO $ sClose getSocket
+    LengthStringConversionError -> do
+      socket <- getSocket
+      lift . lift $ sClose socket
 
 
 headerReader :: ClientFlow
 headerReader = undefined
 
 -- not implemented yet
-processRequest :: ConnectionInformation -> DB.ByteString -> ClientFlow
-processRequest client request = do
-  let clientSocket = connectionSocket client
-  printLine $ "Processing request: " ++ showByteString request
-  liftIO $ sClose clientSocket
+processRequest :: ClientFlow
+processRequest = do
+  buffer <- getBuffer
+  clientPrint $ "Processing request: " ++ showByteString buffer
+  socket <- getSocket
+  liftIO $ sClose socket

@@ -1,4 +1,5 @@
 module Veles.Client(
+  ClientEnvironmentData(..), -- temporary
   ClientEnvironmentT,
   withClientEnvironment,
   getSocket,
