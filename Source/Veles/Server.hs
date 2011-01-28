@@ -59,8 +59,8 @@ type ClientFlow = ClientEnvironmentT IO ()
 
 readClientData :: ClientFlow -> ClientFlow
 readClientData handler = do
-  socket <- getSocket
-  newData <- liftIO $ recv socket receiveSize
+  clientSocket <- getSocket
+  newData <- liftIO $ recv clientSocket receiveSize
   if DB.null newData
     then clientPrint "Connection closed"
     else do clientPrint $ "Received data : " ++ showByteString newData
@@ -78,9 +78,7 @@ headerLengthReader = do
         Nothing ->
           readClientData headerLengthReader
     LengthStringConversionError -> do
-      socket <- getSocket
-      lift . lift $ sClose socket
-
+      closeSocket
 
 headerReader :: ClientFlow
 headerReader = undefined
@@ -90,5 +88,4 @@ processRequest :: ClientFlow
 processRequest = do
   buffer <- getBuffer
   clientPrint $ "Processing request: " ++ showByteString buffer
-  socket <- getSocket
-  liftIO $ sClose socket
+  closeSocket

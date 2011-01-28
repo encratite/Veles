@@ -3,6 +3,7 @@ module Veles.Client(
   ClientEnvironmentT,
   withClientEnvironment,
   getSocket,
+  closeSocket,
   getBuffer,
   appendBuffer,
   dropBuffer,
@@ -32,6 +33,9 @@ withClientEnvironment client state =
 
 getSocket :: (Monad m, Functor m) => ClientEnvironmentT m Socket
 getSocket = connectionSocket <$> gets clientConnection
+
+closeSocket :: (MonadIO m, Functor m) => ClientEnvironmentT m ()
+closeSocket = liftIO . sClose =<< getSocket
 
 getBuffer :: Monad m => ClientEnvironmentT m DB.ByteString
 getBuffer = gets clientBuffer
