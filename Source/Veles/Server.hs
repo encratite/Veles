@@ -3,9 +3,7 @@ module Veles.Server(
   runServer
   ) where
 
-import Control.Concurrent
 import Control.Monad
-import Control.Monad.Reader
 import Control.Monad.State -- temporary
 import qualified Data.ByteString as DB
 import qualified Data.ByteString.Char8 as DBC
@@ -41,12 +39,7 @@ acceptClient serverSocket = do
   (clientSocket, clientAddress) <- liftIO $ accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
   let connectionInformation = ConnectionInformation clientSocket clientAddress
-  -- forkReader . withClientEnvironment $ readClientData headerLengthReader
-  consoleState <- ask
-  let client = ClientEnvironmentData connectionInformation DBC.empty
-      innerRunner = runStateT (readClientData headerLengthReader) client
-      outerRunner = runReaderT innerRunner consoleState
-  lift . void . forkIO . void $ outerRunner
+  forkReader . void $ withClientEnvironment connectionInformation $ readClientData headerLengthReader
 
 showByteString :: DB.ByteString -> String
 showByteString string = show $ DBC.unpack string
