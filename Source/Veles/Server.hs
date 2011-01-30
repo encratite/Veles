@@ -48,9 +48,9 @@ showByteString string = show $ DBC.unpack string
 receiveSize :: Int
 receiveSize = 0x1000
 
-type ClientFlow = ClientEnvironmentT IO ()
+type ClientEnvironment = ClientEnvironmentT IO ()
 
-readClientData :: ClientFlow -> ClientFlow
+readClientData :: ClientEnvironment -> ClientEnvironment
 readClientData handler = do
   clientSocket <- getSocket
   newData <- liftIO $ recv clientSocket receiveSize
@@ -60,24 +60,39 @@ readClientData handler = do
             appendBuffer newData
             handler
 
-headerLengthReader :: ClientFlow
+headerLengthReader :: ClientEnvironment
 headerLengthReader = do
   buffer <- getBuffer
   case determineRequestLength buffer of
     RegularLengthResult maybeLength ->
       case maybeLength of
         Just (expectedLength, remainingBuffer) ->
-          headerReader
+          setBuffer remainingBuffer
+          headerReader expectedLength
         Nothing ->
           readClientData headerLengthReader
     LengthStringConversionError -> do
       closeSocket
 
-headerReader :: ClientFlow
-headerReader = undefined
+headerReader :: Int -> ClientEnvironment
+headerReader headerSize = do
+  buffer <- getBuffer
+  if DB.length buffer >= headerSize
+    then do let header = DB.take headerSize buffer
+            dropBuffer headerSize
+            case parseHeader header of
+              Left errorMessage ->
+                clientPrint errorMessage
+                closeSocket
+              Right requestHeader ->
+                contentReader requestHeader
+    else readClientData $ headerReader headerSize
+
+contentReader :: RequestHeader -> ClientEnvironment
+contentReader header = undefined
 
 -- not implemented yet
-processRequest :: ClientFlow
+processRequest :: ClientEnvironment
 processRequest = do
   buffer <- getBuffer
   clientPrint $ "Processing request: " ++ showByteString buffer
