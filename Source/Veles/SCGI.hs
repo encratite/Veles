@@ -1,4 +1,5 @@
 module Veles.SCGI(
+  RequestMethod(..),
   RequestLengthResult(..),
   determineRequestLength,
   RequestHeader(..),
@@ -42,12 +43,6 @@ determineRequestLength buffer =
       -- unable to determine the end of the length string (i.e. no colon was found)
       RegularLengthResult Nothing
 
-type RequestHeaderMap = DM.Map String String
-data RequestHeader = RequestHeader {
-  requestMap :: RequestHeaderMap,
-  requestContentLength :: Int
-  }
-
 -- | This is the Parsec parser used by 'parseHeader' to parse SCGI headers.
 headerParser :: Parser [(String, String)]
 headerParser = do
@@ -64,9 +59,71 @@ headerParser = do
   void $ char headerDelimiter
   return pairs
 
+data RequestMethod = GetMethod | PostMethod
+
+type RequestHeaderMap = DM.Map String String
+data RequestHeader = RequestHeader {
+  requestMap :: RequestHeaderMap,
+  requestContentLength :: Int,
+  requestURI :: String,
+  requestMethod :: RequestMethod
+  }
+
+type RequestParserResult = Either String RequestHeader
+
+-- | Parse a request method string from an SCGI header.
+parseRequestMethod :: String -> Maybe RequestMethod
+parseRequestMethod field =
+   case field of
+     "GET" ->
+       Just GetMethod
+     "POST" ->
+       Just PostMethod
+     _ ->
+       Nothing
+
+-- | Interpret the fields of an SCGI header.
+interpretRequestHeaderFields :: RequestHeaderMap -> RequestParserResult
+interpretRequestHeaderFields map =
+  let lookup = DS.lookup map
+      scgiField = "SCGI"
+      contentLengthField = "CONTENT_LENGTH"
+      uriField = "REQUEST_URI"
+      methodField = "REQUEST_METHOD"
+      expectedSCGIValue = "1"
+      in
+  case lookup scgiField of
+    Just scgiValue ->
+      if scgiValue == expectedSCGIValue
+      then case lookup contentLengthField of
+        Just contentLengthString ->
+          let maybeContentLength = readMaybe contentLengthString :: Maybe Int in
+          case maybeContentLength of
+            Just contentLength ->
+              case lookup uriField of
+                Just uri ->
+                  case lookup methodField of
+                    Just methodString ->
+                      case parseRequestMethod methodString of
+                        Just method ->
+                          RequestHeader outputMap contentLength uri method
+                        Nothing ->
+                          Left "Invalid HTTP method specified in SCGI header: " ++ show methodString
+                    Nothing ->
+                      Left "SCGI header lacks a HTTP method field"
+                Nothing ->
+                  Left "SCGI header lacks a request URI"
+            Nothing ->
+              Left "Invalid content length in SCGI header: " ++ show contentLengthString
+        Nothing ->
+          Left "The request lacks a " ++ show contentLengthField ++ " field"
+      else Left "The SCGI header entry has an invalid value: " ++ show scgiValue
+    Nothing ->
+      Left "The request lacks an SCGI header entry"
+
 -- | Parses the fields in an SCGI request header and returns them as a map.
 -- If it returns Right, the header was parsed successfully, otherwise it returns Left with an error message.
-parseHeader :: DB.ByteString -> Either String RequestHeader
+parseHeader :: DB.ByteString -> RequestParserResult
 parseHeader buffer =
   case parse headerParser "SCGI header" buffer of
     Right pairs ->
@@ -75,26 +132,9 @@ parseHeader buffer =
           outputMap = DM.map head multiMap
           collisionFields = keys $ filter (\x -> length x > 1) multiMap
           hasCollided = not $ null collisionFields
-          lookup = DS.lookup outputMap
-          contentLengthField = "CONTENT_LENGTH"
           in
        if hasCollided
        then Left "Invalid SCGI request - detected field collisions in the header: " ++ show collisionFields
-       else case lookup "SCGI" of
-         Just scgiValue ->
-           if scgiValue == "1"
-           then case lookup contentLengthField of
-             Just contentLengthString ->
-               let maybeContentLength = readMaybe contentLengthString :: Maybe Int
-               case maybeContentLength of
-                 Just contentLength ->
-                   RequestHeader outputMap contentLength
-                 Nothing ->
-                   Left "Invalid content length in SCGI header: " ++ show contentLengthString
-             Nothing ->
-               Left "The request lacks a " ++ show contentLengthField ++ " field"
-           else Left "The SCGI header entry has an invalid value: " ++ show scgiValue
-         Nothing ->
-           Left "The request lacks an SCGI header entry"
+       else getRequestHeader outputMap
     Left errorMessage ->
       Left "Failed to parse the header of an SCGI request: " ++ errorMessage

@@ -22,6 +22,8 @@ import Veles.SCGI
 runServer :: Int -> IO ()
 runServer port =  withSocketsDo . withLockedConsole $ createServer port
 
+-- | Create a new SCGI server on the specified port and start accepting clients.
+-- Does not terminate.
 createServer :: Int -> LockedConsoleT IO ()
 createServer port = do
   serverSocket <- liftIO $ socket AF_INET Stream defaultProtocol
@@ -41,6 +43,7 @@ acceptClient serverSocket = do
   let connectionInformation = ConnectionInformation clientSocket clientAddress
   forkReader . void $ withClientEnvironment connectionInformation $ readClientData headerLengthReader
 
+-- | Unpack and show a ByteString so it can be printed to stdio.
 showByteString :: DB.ByteString -> String
 showByteString string = show $ DBC.unpack string
 
@@ -50,6 +53,7 @@ receiveSize = 0x1000
 
 type ClientEnvironment = ClientEnvironmentT IO ()
 
+-- | Read data from a client and pass on the environment to the specified handler to process what has been received.
 readClientData :: ClientEnvironment -> ClientEnvironment
 readClientData handler = do
   clientSocket <- getSocket
@@ -60,6 +64,7 @@ readClientData handler = do
             appendBuffer newData
             handler
 
+-- | Responsible for parsing the "123:" part in the beginning of an SCGI request.
 headerLengthReader :: ClientEnvironment
 headerLengthReader = do
   buffer <- getBuffer
@@ -74,6 +79,7 @@ headerLengthReader = do
     LengthStringConversionError -> do
       closeSocket
 
+-- | Read the rest of the header of an SCGI request given its previously parsed size.
 headerReader :: Int -> ClientEnvironment
 headerReader headerSize = do
   buffer <- getBuffer
@@ -88,10 +94,23 @@ headerReader headerSize = do
                 contentReader requestHeader
     else readClientData $ headerReader headerSize
 
+-- | Read the actual content body after the SCGI header's terminating comma.
 contentReader :: RequestHeader -> ClientEnvironment
-contentReader header = undefined
+contentReader header = do
+  buffer <- getBuffer
+  let contentLength = requestContentLength header
+      bufferLength = DB.length buffer
+  case compare bufferLength contentLength of
+    LT ->
+      readClientData contentReader
+    EQ ->
+      processRequest
+    GT ->
+      -- somethind odd occurred, an SCGI request was too long
+      clientPrint "Request too long (" ++ show bufferLength " byte(s)) for the content length specified in the SCGI header (" ++ show contentLength ++ " byte(s))"
+      closeSocket
 
--- not implemented yet
+-- | Process the request of a client.
 processRequest :: ClientEnvironment
 processRequest = do
   buffer <- getBuffer
