@@ -71,7 +71,7 @@ headerLengthReader = do
   case determineRequestLength buffer of
     RegularLengthResult maybeLength ->
       case maybeLength of
-        Just (expectedLength, remainingBuffer) ->
+        Just (expectedLength, remainingBuffer) -> do
           setBuffer remainingBuffer
           headerReader expectedLength
         Nothing ->
@@ -87,7 +87,7 @@ headerReader headerSize = do
     then do let header = DB.take headerSize buffer
             dropBuffer headerSize
             case parseHeader header of
-              Left errorMessage ->
+              Left errorMessage -> do
                 clientPrint errorMessage
                 closeSocket
               Right requestHeader ->
@@ -102,12 +102,12 @@ contentReader header = do
       bufferLength = DB.length buffer
   case compare bufferLength contentLength of
     LT ->
-      readClientData contentReader
+      readClientData $ contentReader header
     EQ ->
       processRequest header
-    GT ->
+    GT -> do
       -- somethind odd occurred, an SCGI request was too long
-      clientPrint "Request too long (" ++ show bufferLength " byte(s)) for the content length specified in the SCGI header (" ++ show contentLength ++ " byte(s))"
+      clientPrint $ "Request too long (" ++ show bufferLength ++ " byte(s)) for the content length specified in the SCGI header (" ++ show contentLength ++ " byte(s))"
       closeSocket
 
 -- | Process the request of a client.

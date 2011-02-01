@@ -5,6 +5,7 @@ module Veles.Client(
   getSocket,
   closeSocket,
   getBuffer,
+  setBuffer,
   appendBuffer,
   dropBuffer,
   clientPrint
@@ -44,6 +45,9 @@ modifyBuffer :: Monad m => (DB.ByteString -> DB.ByteString) -> ClientEnvironment
 modifyBuffer f = modify modifier
   where
     modifier state = ClientEnvironmentData (clientConnection state) (f (clientBuffer state))
+
+setBuffer :: Monad m => DB.ByteString -> ClientEnvironmentT m ()
+setBuffer replacement = modifyBuffer $ const replacement
 
 appendBuffer :: Monad m => DB.ByteString -> ClientEnvironmentT m ()
 appendBuffer newData = modifyBuffer $ DBC.append newData
