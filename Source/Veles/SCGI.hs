@@ -59,7 +59,7 @@ headerParser = do
   void $ char headerDelimiter
   return pairs
 
-data RequestMethod = GetMethod | PostMethod
+data RequestMethod = GetMethod | PostMethod deriving Show
 
 type RequestHeaderMap = DM.Map String String
 data RequestHeader = RequestHeader {
@@ -84,40 +84,40 @@ parseRequestMethod field =
 
 -- | Interpret the fields of an SCGI header.
 interpretRequestHeaderFields :: RequestHeaderMap -> RequestParserResult
-interpretRequestHeaderFields map =
-  let lookup = DS.lookup map
+interpretRequestHeaderFields fieldMap =
+  let fieldLookup = flip DM.lookup $ fieldMap
       scgiField = "SCGI"
       contentLengthField = "CONTENT_LENGTH"
       uriField = "REQUEST_URI"
       methodField = "REQUEST_METHOD"
       expectedSCGIValue = "1"
       in
-  case lookup scgiField of
+  case fieldLookup scgiField of
     Just scgiValue ->
       if scgiValue == expectedSCGIValue
-      then case lookup contentLengthField of
+      then case fieldLookup contentLengthField of
         Just contentLengthString ->
           let maybeContentLength = readMaybe contentLengthString :: Maybe Int in
           case maybeContentLength of
             Just contentLength ->
-              case lookup uriField of
+              case fieldLookup uriField of
                 Just uri ->
-                  case lookup methodField of
+                  case fieldLookup methodField of
                     Just methodString ->
                       case parseRequestMethod methodString of
                         Just method ->
-                          RequestHeader outputMap contentLength uri method
+                          Right $ RequestHeader fieldMap contentLength uri method
                         Nothing ->
-                          Left "Invalid HTTP method specified in SCGI header: " ++ show methodString
+                          Left $ "Invalid HTTP method specified in SCGI header: " ++ show methodString
                     Nothing ->
                       Left "SCGI header lacks a HTTP method field"
                 Nothing ->
                   Left "SCGI header lacks a request URI"
             Nothing ->
-              Left "Invalid content length in SCGI header: " ++ show contentLengthString
+              Left $ "Invalid content length in SCGI header: " ++ show contentLengthString
         Nothing ->
-          Left "The request lacks a " ++ show contentLengthField ++ " field"
-      else Left "The SCGI header entry has an invalid value: " ++ show scgiValue
+          Left $ "The request lacks a " ++ show contentLengthField ++ " field"
+      else Left $ "The SCGI header entry has an invalid value: " ++ show scgiValue
     Nothing ->
       Left "The request lacks an SCGI header entry"
 
@@ -127,14 +127,14 @@ parseHeader :: DB.ByteString -> RequestParserResult
 parseHeader buffer =
   case parse headerParser "SCGI header" buffer of
     Right pairs ->
-      let listPairs = map (:[]) pairs
-          multiMap = foldr (++) DM.empty listPairs
+      let insertion (key, value) insertionMap = DM.insertWith (++) key [value] insertionMap
+          multiMap = foldr insertion DM.empty pairs
           outputMap = DM.map head multiMap
-          collisionFields = keys $ filter (\x -> length x > 1) multiMap
+          collisionFields = DM.keys $ DM.filter (\x -> length x > 1) multiMap
           hasCollided = not $ null collisionFields
           in
        if hasCollided
-       then Left "Invalid SCGI request - detected field collisions in the header: " ++ show collisionFields
-       else getRequestHeader outputMap
-    Left errorMessage ->
-      Left "Failed to parse the header of an SCGI request: " ++ errorMessage
+       then Left $ "Invalid SCGI request - detected field collisions in the header: " ++ show collisionFields
+       else interpretRequestHeaderFields outputMap
+    Left parseError ->
+      Left $ "Failed to parse the header of an SCGI request: " ++ show parseError

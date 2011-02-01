@@ -104,15 +104,15 @@ contentReader header = do
     LT ->
       readClientData contentReader
     EQ ->
-      processRequest
+      processRequest header
     GT ->
       -- somethind odd occurred, an SCGI request was too long
       clientPrint "Request too long (" ++ show bufferLength " byte(s)) for the content length specified in the SCGI header (" ++ show contentLength ++ " byte(s))"
       closeSocket
 
 -- | Process the request of a client.
-processRequest :: ClientEnvironment
-processRequest = do
+processRequest :: RequestHeader -> ClientEnvironment
+processRequest header = do
   buffer <- getBuffer
-  clientPrint $ "Processing request: " ++ showByteString buffer
+  clientPrint $ "Processing a request for " ++ requestURI header ++ " (" ++ (show $ requestMethod header) ++ "):\n" ++ showByteString buffer
   closeSocket

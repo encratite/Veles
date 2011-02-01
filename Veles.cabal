@@ -12,9 +12,13 @@ Library
   hs-source-dirs:    Source
   Build-Depends:     base >= 4 && < 5,
                      bytestring >= 0.9 && < 0.10,
+                     containers >= 0.4 && < 0.5,
                      mtl >= 2.0 && < 2.1,
                      network >= 2.3 && < 2.4,
-                     Knyaz >= 0.1
+                     Knyaz >= 0.1,
+                     parsec >= 3.1 && < 3.2
   Exposed-modules:   Veles.Server
-  Other-modules:     Veles.SCGI
+  Other-modules:     Veles.Client
+                     Veles.ConnectionInformation
+                     Veles.SCGI
   ghc-options:       -Wall
