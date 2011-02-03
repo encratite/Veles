@@ -47,13 +47,13 @@ modifyBuffer f = modify modifier
     modifier state = ClientEnvironmentData (clientConnection state) (f (clientBuffer state))
 
 setBuffer :: Monad m => DB.ByteString -> ClientEnvironmentT m ()
-setBuffer replacement = modifyBuffer $ const replacement
+setBuffer = modifyBuffer . const
 
 appendBuffer :: Monad m => DB.ByteString -> ClientEnvironmentT m ()
-appendBuffer newData = modifyBuffer $ DBC.append newData
+appendBuffer = modifyBuffer . DBC.append
 
 dropBuffer :: Monad m => Int -> ClientEnvironmentT m ()
-dropBuffer n = modifyBuffer $ DBC.drop n
+dropBuffer = modifyBuffer . DBC.drop
 
 clientPrint :: MonadIO m => String -> ClientEnvironmentT m ()
 clientPrint string = do

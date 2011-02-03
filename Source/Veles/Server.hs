@@ -60,8 +60,7 @@ readClientData handler = do
   newData <- liftIO $ recv clientSocket receiveSize
   if DB.null newData
     then clientPrint "Connection closed"
-    else do clientPrint $ "Received data : " ++ showByteString newData
-            appendBuffer newData
+    else do appendBuffer newData
             handler
 
 -- | Responsible for parsing the "123:" part in the beginning of an SCGI request.
@@ -86,7 +85,6 @@ headerReader headerSize = do
   if DB.length buffer >= headerSize
     then do let header = DB.take headerSize buffer
             dropBuffer headerSize
-            clientPrint $ "Parsing header: " ++ showByteString header
             case parseHeader header of
               Left errorMessage -> do
                 clientPrint errorMessage
