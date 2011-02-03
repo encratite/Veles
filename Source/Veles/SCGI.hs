@@ -27,7 +27,7 @@ determineRequestLength buffer =
   case findSubByteString buffer $ DBC.pack ":" of
     Just offset ->
       let lengthString = DBC.unpack $ DB.take offset buffer
-          remainingBuffer = DB.drop offset buffer
+          remainingBuffer = DB.drop (offset + 1) buffer
           lengthMaybe = readMaybe lengthString :: Maybe Int
           in
        case lengthMaybe of
@@ -48,13 +48,13 @@ headerParser :: Parser [(String, String)]
 headerParser = do
   let stringDelimiter = '\NUL'
       headerDelimiter = ','
-      parseString = do
-        content <- many1 $ noneOf [stringDelimiter]
+      parseString manyFunction = do
+        content <- manyFunction $ noneOf [stringDelimiter]
         void $ char stringDelimiter
         return content
   pairs <- many . try $ do
-    field <- parseString
-    value <- parseString
+    field <- parseString many1
+    value <- parseString many
     return (field, value)
   void $ char headerDelimiter
   return pairs

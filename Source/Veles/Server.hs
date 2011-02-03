@@ -86,6 +86,7 @@ headerReader headerSize = do
   if DB.length buffer >= headerSize
     then do let header = DB.take headerSize buffer
             dropBuffer headerSize
+            clientPrint $ "Parsing header: " ++ showByteString header
             case parseHeader header of
               Left errorMessage -> do
                 clientPrint errorMessage
