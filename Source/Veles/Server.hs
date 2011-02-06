@@ -11,7 +11,7 @@ import Network.Socket hiding (recv)
 import Network.Socket.ByteString (recv)
 
 import Knyaz.Console
-import Knyaz.Reader
+import Knyaz.Forkable
 
 import Veles.ConnectionInformation
 import Veles.Client
@@ -41,7 +41,7 @@ acceptClient serverSocket = do
   (clientSocket, clientAddress) <- liftIO $ accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
   let connectionInformation = ConnectionInformation clientSocket clientAddress
-  forkReader . void $ withClientEnvironment connectionInformation $ readClientData headerLengthReader
+  fork $ withClientEnvironment connectionInformation $ readClientData headerLengthReader
 
 -- | Unpack and show a ByteString so it can be printed to stdio.
 showByteString :: DB.ByteString -> String
