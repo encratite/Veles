@@ -4,6 +4,7 @@ module Request(
   Request(..)
   ) where
 
+import Control.Monad
 import qualified Data.ByteString as DB
 import qualified Data.ByteString.Char8 as DBC
 import qualified Data.Map as DM
@@ -38,8 +39,10 @@ urlEncodingTokenParser = do
     return (fieldName, value)
   return pairs
 
+type ContentProcessingResult = DB.ByteString -> Either String RequestContent
+
 -- | Attempts to fully decode the RFC 1738 URL encoded content of a request.
-processURLEncodedData :: DB.ByteString -> Either String RequestContent
+processURLEncodedData :: ContentProcessingResult
 processURLEncodedData contentBuffer =
   case parse urlEncodingTokenParser "URL encoding tokens" contentBuffer of
     Left errorMessage ->
@@ -52,6 +55,45 @@ processURLEncodedData contentBuffer =
       let f = decodeUrl in
       (f field, f value)
 
+data HTTPHeaderValueField =
+  HTTPHeaderValueField String |
+  HTTPHeaderValuePair (String, String)
+
+parseHTTPHeaderValue :: Parser [HTTPHeaderValueField]
+parseHTTPHeaderValue = do
+  fields <- many1 $ do
+    skipMany $ char space
+    field <- valuePair <|> valueField
+    return field
+  where
+    separator = ';'
+    space = ' '
+    fieldSeparator = '='
+
+    endParser = (void $ char separator) <|> eof
+    contentParser = many1 $ noneOf [separator, fieldSeparator]
+    rightTrim = reverse . dropWhile (== space) . reverse
+
+    valuePair :: Parser (HTTPHeaderValuePair (String, String))
+    valuePair = do
+      field <- contentParser
+      void $ char fieldSeparator
+      untrimmedValue <- contentParser
+      let value = rightTrim untrimmedValue
+      endParser
+      return $ HTTPHeaderValuePair field value
+
+    valueField :: Parser (HTTPHeaderValueField String)
+    valueField = do
+      untrimmedValue <- contentParser
+      let value = rightTrim untrimmedValue
+      endParser
+      return $ HTTPHeaderValueField value
+
+processMultipartEncodedData :: ContentProcessingResult
+processMultipartEncodedData contentBuffer =
+
+
 -- | Attempts to decode the content of a request to insert the decoded pairs into a map.
 parseRequestContent :: RequestHeaderMap -> DB.ByteString -> Either String RequestContent
 parseRequestContent headerMap contentBuffer =
@@ -59,9 +101,15 @@ parseRequestContent headerMap contentBuffer =
     Just contentType ->
       case contentType of
         "application/x-www-form-urlencoded" ->
-          processURLEncodedData
+          processURLEncodedData contentBuffer
         _ ->
-          Left "Encountered an unknown content type in a request: " ++ consoleString contentType
+          let multipartIdentifier = "multipart/form-data"
+              in
+           case parse parseHTTPHeaderValue "HTTP header value" contentType of
+             Left errorMessage ->
+               Left $ "Unable to parse the content type of a request: " ++ errorMessage
+             Right fields ->
+               Left "Encountered an unknown content type in a request: " ++ consoleString contentType
     Nothing ->
       if DB.null contentBuffer
       then DM.empty
