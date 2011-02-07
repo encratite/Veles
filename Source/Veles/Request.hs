@@ -1,4 +1,4 @@
-module Request(
+Request module(
   RequestMethod,
   RequestBody,
   Request(..)
@@ -11,6 +11,8 @@ import qualified Data.Map as DM
 import Text.Parsec
 import Text.Parsec.ByteString
 import Web.Encodings
+
+import Knyaz.String
 
 import Veles.Console
 import Veles.SCGI
@@ -39,10 +41,10 @@ urlEncodingTokenParser = do
     return (fieldName, value)
   return pairs
 
-type ContentProcessingResult = DB.ByteString -> Either String RequestContent
+type ContentProcessor = DB.ByteString -> Either String RequestContent
 
 -- | Attempts to fully decode the RFC 1738 URL encoded content of a request.
-processURLEncodedData :: ContentProcessingResult
+processURLEncodedData :: ContentProcessor
 processURLEncodedData contentBuffer =
   case parse urlEncodingTokenParser "URL encoding tokens" contentBuffer of
     Left errorMessage ->
@@ -59,57 +61,56 @@ data HTTPHeaderValueField =
   HTTPHeaderValueField String |
   HTTPHeaderValuePair (String, String)
 
-parseHTTPHeaderValue :: Parser [HTTPHeaderValueField]
-parseHTTPHeaderValue = do
-  fields <- many1 $ do
-    skipMany $ char space
-    field <- valuePair <|> valueField
-    return field
+parseHTTPHeaderValue :: String -> Either String [HTTPHeaderValueField]
+parseHTTPHeaderValue string =
+   if hasEmptyToken
+   then Left "Encountered an empty token"
+   else if invalidTokenCount
+        then Left "Invalid token count"
+        else Right valueFields
   where
-    separator = ';'
-    space = ' '
-    fieldSeparator = '='
+    groups = tokeniseString string ";"
+    tokenGroups = map (\x -> tokeniseString x "=") groups
+    hasEmptyToken = any (\x -> any null x) tokenGroups
+    invalidTokenCount = any (== Nothing) maybeFields
+    maybeFields = map maybeField tokenGroups
+    maybeField tokens =
+      case tokens of
+        (field : value : []) ->
+          Just $ HTTPHeaderValuePair (field, value)
+        (value : []) ->
+          Just $ HTTPHeaderValueField value
+        _ ->
+          Nothing
 
-    endParser = (void $ char separator) <|> eof
-    contentParser = many1 $ noneOf [separator, fieldSeparator]
-    rightTrim = reverse . dropWhile (== space) . reverse
-
-    valuePair :: Parser (HTTPHeaderValuePair (String, String))
-    valuePair = do
-      field <- contentParser
-      void $ char fieldSeparator
-      untrimmedValue <- contentParser
-      let value = rightTrim untrimmedValue
-      endParser
-      return $ HTTPHeaderValuePair field value
-
-    valueField :: Parser (HTTPHeaderValueField String)
-    valueField = do
-      untrimmedValue <- contentParser
-      let value = rightTrim untrimmedValue
-      endParser
-      return $ HTTPHeaderValueField value
-
-processMultipartEncodedData :: ContentProcessingResult
-processMultipartEncodedData contentBuffer =
-
+processMultipartEncodedData :: String -> ContentProcessor
+processMultipartEncodedData boundary contentBuffer = undefined
 
 -- | Attempts to decode the content of a request to insert the decoded pairs into a map.
 parseRequestContent :: RequestHeaderMap -> DB.ByteString -> Either String RequestContent
 parseRequestContent headerMap contentBuffer =
+  let urlEncodedIdentifier = "application/x-www-form-urlencoded"
+      multipartIdentifier = "multipart/form-data"
+      in
   case DM.lookup "Content-Type" headerMap of
     Just contentType ->
       case contentType of
-        "application/x-www-form-urlencoded" ->
+        urlEncodedIdentifier ->
           processURLEncodedData contentBuffer
         _ ->
-          let multipartIdentifier = "multipart/form-data"
-              in
-           case parse parseHTTPHeaderValue "HTTP header value" contentType of
+           case parseHTTPHeaderValue contentType of
              Left errorMessage ->
                Left $ "Unable to parse the content type of a request: " ++ errorMessage
              Right fields ->
-               Left "Encountered an unknown content type in a request: " ++ consoleString contentType
+               if length fields == 2 && head fields == HTTPHeaderValueField multipartIdentifier
+               then
+                 case last fields of
+                   HTTPHeaderValuePair ("boundary", boundary) ->
+                     Right $ processMultipartEncodedData boundary contentBuffer
+                   _ ->
+                     Left $ "Invalid multipart boundary in content type: " ++ consoleString contentType
+               else
+                 Left $ "Encountered an unknown content type in a request: " ++ consoleString contentType
     Nothing ->
       if DB.null contentBuffer
       then DM.empty

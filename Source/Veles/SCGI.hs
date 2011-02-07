@@ -16,6 +16,8 @@ import Text.Parsec.ByteString
 import Knyaz.ByteString
 import Knyaz.String
 
+import Veles.Console
+
 data RequestLengthResult =
   -- the tuple means (length of the SCGI request (without the length string/colon that is), remaining buffer without the length string)
   RegularLengthResult (Maybe (Int, DB.ByteString)) |
@@ -107,16 +109,16 @@ interpretRequestHeaderFields fieldMap =
                         Just method ->
                           Right $ RequestHeader fieldMap contentLength uri method
                         Nothing ->
-                          Left $ "Invalid HTTP method specified in SCGI header: " ++ show methodString
+                          Left $ "Invalid HTTP method specified in SCGI header: " ++ consoleString methodString
                     Nothing ->
                       Left "SCGI header lacks a HTTP method field"
                 Nothing ->
                   Left "SCGI header lacks a request URI"
             Nothing ->
-              Left $ "Invalid content length in SCGI header: " ++ show contentLengthString
+              Left $ "Invalid content length in SCGI header: " ++ consoleString contentLengthString
         Nothing ->
           Left $ "The request lacks a " ++ show contentLengthField ++ " field"
-      else Left $ "The SCGI header entry has an invalid value: " ++ show scgiValue
+      else Left $ "The SCGI header entry has an invalid value: " ++ consoleString scgiValue
     Nothing ->
       Left "The request lacks an SCGI header entry"
 
@@ -135,5 +137,5 @@ parseHeader buffer =
        if hasCollided
        then Left $ "Invalid SCGI request - detected field collisions in the header: " ++ show collisionFields
        else interpretRequestHeaderFields outputMap
-    Left parseError ->
-      Left $ "Failed to parse the header of an SCGI request: " ++ show parseError
+    Left parserError ->
+      Left $ "Failed to parse the header of an SCGI request: " ++ show parserError
