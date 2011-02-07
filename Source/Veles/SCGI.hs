@@ -59,9 +59,8 @@ headerParser = do
   void $ char headerDelimiter
   return pairs
 
-data RequestMethod = GetMethod | PostMethod deriving Show
-
 type RequestHeaderMap = DM.Map String String
+
 data RequestHeader = RequestHeader {
   requestMap :: RequestHeaderMap,
   requestContentLength :: Int,

@@ -41,7 +41,7 @@ acceptClient serverSocket = do
   (clientSocket, clientAddress) <- liftIO $ accept serverSocket
   printLine $ "New connection: " ++ (show clientAddress)
   let connectionInformation = ConnectionInformation clientSocket clientAddress
-  fork $ withClientEnvironment connectionInformation $ readClientData headerLengthReader
+  fork . withClientEnvironment connectionInformation $ readClientData headerLengthReader
 
 -- | Unpack and show a ByteString so it can be printed to stdio.
 showByteString :: DB.ByteString -> String
