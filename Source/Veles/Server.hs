@@ -15,6 +15,7 @@ import Knyaz.Forkable
 
 import Veles.ConnectionInformation
 import Veles.Client
+import Veles.Request
 import Veles.SCGI
 
 -- | Run the SCGI server on the specified port.
@@ -97,7 +98,7 @@ headerReader headerSize = do
 contentReader :: RequestHeader -> ClientEnvironment
 contentReader header = do
   buffer <- getBuffer
-  let contentLength = requestContentLength header
+  let contentLength = requestHeaderContentLength header
       bufferLength = DB.length buffer
   case compare bufferLength contentLength of
     LT ->
@@ -113,5 +114,7 @@ contentReader header = do
 processRequest :: RequestHeader -> ClientEnvironment
 processRequest header = do
   buffer <- getBuffer
-  clientPrint $ "Processing a request for " ++ requestURI header ++ " (" ++ (show $ requestMethod header) ++ "):\n" ++ showByteString buffer
+  let path = requestHeaderURI header
+      method = requestHeaderMethod header
+  clientPrint $ "Processing a request for " ++ path ++ " (" ++ (show method) ++ "):\n" ++ showByteString buffer
   closeSocket

@@ -62,10 +62,10 @@ headerParser = do
 type RequestHeaderMap = DM.Map String String
 
 data RequestHeader = RequestHeader {
-  requestMap :: RequestHeaderMap,
-  requestContentLength :: Int,
-  requestURI :: String,
-  requestMethod :: RequestMethod
+  requestHeaderMap :: RequestHeaderMap,
+  requestHeaderContentLength :: Int,
+  requestHeaderURI :: String,
+  requestHeaderMethod :: RequestMethod
   }
 
 type RequestParserResult = Either String RequestHeader
